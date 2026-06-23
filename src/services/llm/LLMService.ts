@@ -54,6 +54,7 @@ class LLMService {
         this.providers = {
             openai: new OpenAIProvider('openai'),
             openrouter: new OpenAIProvider('openrouter'),
+            'local-openai': new OpenAIProvider('local-openai'),
             anthropic: new AnthropicProvider(),
             gemini: new GeminiProvider(),
         };
@@ -71,6 +72,9 @@ class LLMService {
     private getApiKey(): string {
         const { apiKeys, selectedProvider } = useSettingsStore.getState();
         const key = apiKeys[selectedProvider];
+        if (selectedProvider === 'local-openai') {
+            return key || 'ollama';
+        }
         if (!key) {
             throw new Error(`API Key for ${selectedProvider} is missing. Please configure it in settings.`);
         }

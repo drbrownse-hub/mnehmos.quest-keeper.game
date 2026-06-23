@@ -139,12 +139,12 @@ export class McpClient {
 
             const spawnOptions = cwd ? { cwd } : undefined;
 
-            // Strategy 1: Try sidecar (Standard Dev Mode)
+            // Strategy 1: Try Linux sidecar
             try {
                 await this.logToFile(`[Connect] Attempting Strategy 1: Sidecar`);
-                console.log(`[McpClient] Strategy 1: Sidecar (${this.serverName})`);
+                console.log(`[McpClient] Strategy 1: Sidecar (binaries/rpg-mcp-server)`);
                 // Note: Command.sidecar args are 2nd param, options are 3rd. sidecar takes no args.
-                const sidecarCmd = Command.sidecar(this.serverName, [], spawnOptions);
+                const sidecarCmd = Command.sidecar('binaries/rpg-mcp-server', [], spawnOptions);
                 setupCommandListeners(sidecarCmd);
                 this.process = await sidecarCmd.spawn();
                 this._isConnected = true;
@@ -154,43 +154,8 @@ export class McpClient {
             } catch (sidecarError) {
                 console.warn(`[McpClient] Strategy 1 failed: ${sidecarError}`);
                 await this.logToFile(`Strategy 1 (Sidecar) failed: ${sidecarError}`);
+                throw new Error(`Failed to spawn Linux MCP sidecar binaries/rpg-mcp-server: ${sidecarError}`);
             }
-
-            // Strategy 2: Direct Execution (Production Fallback)
-            try {
-                await this.logToFile(`[Connect] Attempting Strategy 2: Direct Execution`);
-                console.log(`[McpClient] Strategy 2: Direct Execution (rpg-mcp-server-direct)`);
-                // Command.create(program, args, options)
-                const directCmd = Command.create('rpg-mcp-server-direct', [], spawnOptions);
-                setupCommandListeners(directCmd);
-                this.process = await directCmd.spawn();
-                this._isConnected = true;
-                await this.logToFile(`[Connect] Strategy 2 SUCCESS. PID: ${this.process.pid}`);
-                console.log(`[McpClient] Direct exe spawned successfully. PID: ${this.process.pid}`);
-                return;
-
-            } catch (directError) {
-                console.warn(`[McpClient] Strategy 2 failed: ${directError}`);
-                await this.logToFile(`Strategy 2 (Direct) failed: ${directError}`);
-            }
-
-             // Strategy 3: CMD wrapper (Last Resort)
-             try {
-                await this.logToFile(`[Connect] Attempting Strategy 3: CMD Wrapper`);
-                console.log(`[McpClient] Strategy 3: CMD Wrapper`);
-                // For CMD, we set CWD to the app data dir so 'cd /d' isn't needed, likely
-                const cmdCmd = Command.create('run-cmd', ['/c', 'rpg-mcp-server.exe'], spawnOptions);
-                setupCommandListeners(cmdCmd);
-                this.process = await cmdCmd.spawn();
-                this._isConnected = true;
-                await this.logToFile(`[Connect] Strategy 3 SUCCESS. PID: ${this.process.pid}`);
-                console.log(`[McpClient] CMD wrapper spawned successfully. PID: ${this.process.pid}`);
-                return;
-             } catch (cmdError) {
-                 console.error(`[McpClient] Strategy 3 failed: ${cmdError}`);
-                 await this.logToFile(`Strategy 3 (CMD) failed: ${cmdError}`);
-                 throw cmdError; // Rethrow last error
-             }
 
         } catch (error) {
             console.error(`[McpClient] All spawn strategies failed for ${this.serverName}:`, error);

@@ -8,7 +8,7 @@ on:
 
 jobs:
   test:
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
@@ -25,7 +25,7 @@ jobs:
         run: npm run test
 
   build-check:
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
@@ -37,23 +37,29 @@ jobs:
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: x86_64-pc-windows-msvc
+
+      - name: Install Tauri Linux prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libxdo-dev \
+            libssl-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev
 
       - name: Install dependencies
         run: npm ci
 
-      # We need to ensure the sidecar binary and native modules exist or are mocked for the check
-      # For a simple build check, we might just run 'tsc' and 'vite build' without tauri build
-      # But tauri build is the ultimate test.
-      # Since we don't have the binary committed (it's in .gitignore usually, wait, check .gitignore),
-      # we might fail here if we rely on it being present.
-      # The release.yml checks for it.
-      # If the binary is NOT in the repo, CI will fail unless we build it or mock it.
-      # "prepare-mcp.js" copies it.
-      # Assuming we need to build everything or that the user commits binaries (Anti-pattern but explicitly mentioned in release.yml checks).
-      # release.yml says: "Verify sidecar binary exists... Ensure it is committed to the repository."
-      # So we assume it's there.
+      - name: Verify Linux sidecar and native module
+        run: |
+          test -f src-tauri/binaries/rpg-mcp-server-x86_64-unknown-linux-gnu
+          test -f src-tauri/binaries/better_sqlite3.node
+          chmod +x src-tauri/binaries/rpg-mcp-server-x86_64-unknown-linux-gnu
 
       - name: Type Check & Build
         run: npm run build

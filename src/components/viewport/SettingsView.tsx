@@ -8,19 +8,27 @@ export const SettingsView: React.FC = () => {
         selectedProvider,
         providerModels,
         systemPrompt,
+        localOpenAIBaseUrl,
         setApiKey,
         setProvider,
         setModel,
+        setLocalOpenAIBaseUrl,
         setSystemPrompt,
     } = useSettingsStore();
 
     // Theme-aware form element classes
     const inputClasses = "w-full rounded border border-terminal-green-dim bg-terminal-dim px-3 py-2 text-terminal-green focus:border-terminal-green-bright focus:outline-none";
     const selectClasses = "w-full rounded border border-terminal-green-dim bg-terminal-dim px-3 py-2 text-terminal-green focus:border-terminal-green-bright focus:outline-none";
+    const apiKeyLabel = selectedProvider === 'local-openai'
+        ? 'LOCAL API KEY (OPTIONAL)'
+        : `${selectedProvider.toUpperCase()} API KEY`;
+    const apiKeyPlaceholder = selectedProvider === 'local-openai'
+        ? 'Optional dummy key, e.g. ollama'
+        : `Enter ${selectedProvider} API Key`;
 
     return (
         <div className="flex items-center justify-center h-full w-full bg-terminal-black p-8">
-            <div className="w-full max-w-2xl rounded-lg border border-terminal-green-dim bg-terminal-dim p-8 shadow-lg">
+            <div className="max-h-[calc(100vh-4rem)] w-full max-w-2xl overflow-y-auto rounded-lg border border-terminal-green-dim bg-terminal-dim p-8 shadow-lg">
                 <div className="mb-8 border-b border-terminal-green-dim pb-4">
                     <h2 className="text-2xl font-bold text-terminal-green">⚙️ CONFIGURATION</h2>
                 </div>
@@ -43,6 +51,7 @@ export const SettingsView: React.FC = () => {
                             <option value="anthropic">Anthropic</option>
                             <option value="gemini">Google Gemini</option>
                             <option value="openrouter">OpenRouter</option>
+                            <option value="local-openai">Local OpenAI Compatible</option>
                         </select>
                         <p className="text-xs text-terminal-green-dim">
                             This sets the active provider for all chat interactions.
@@ -52,14 +61,14 @@ export const SettingsView: React.FC = () => {
                     {/* API Key */}
                     <div className="space-y-2">
                         <label className="block text-sm font-bold text-terminal-green">
-                            {selectedProvider.toUpperCase()} API KEY
+                            {apiKeyLabel}
                         </label>
                         <input
                             type="password"
                             value={apiKeys[selectedProvider]}
                             onChange={(e) => setApiKey(selectedProvider, e.target.value)}
                             className={inputClasses}
-                            placeholder={`Enter ${selectedProvider} API Key`}
+                            placeholder={apiKeyPlaceholder}
                         />
                     </div>
 
@@ -131,9 +140,32 @@ export const SettingsView: React.FC = () => {
                                         <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
                                     </>
                                 )}
+                                {selectedProvider === 'local-openai' && (
+                                    <>
+                                        <option value="llama3.1">llama3.1</option>
+                                        <option value="qwen2.5">qwen2.5</option>
+                                        <option value="mistral">mistral</option>
+                                    </>
+                                )}
                             </select>
                         </div>
                     </div>
+
+                    {selectedProvider === 'local-openai' && (
+                        <div className="space-y-2">
+                            <label className="block text-sm font-bold text-terminal-green">BASE URL</label>
+                            <input
+                                type="text"
+                                value={localOpenAIBaseUrl}
+                                onChange={(e) => setLocalOpenAIBaseUrl(e.target.value)}
+                                className={inputClasses}
+                                placeholder="http://localhost:11434/v1/chat/completions"
+                            />
+                            <p className="text-xs text-terminal-green-dim">
+                                Use Ollama, llama.cpp server, or any OpenAI-compatible chat completions endpoint.
+                            </p>
+                        </div>
+                    )}
 
                     {/* System Prompt */}
                     <div className="space-y-2">

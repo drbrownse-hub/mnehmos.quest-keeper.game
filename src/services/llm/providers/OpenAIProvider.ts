@@ -1,5 +1,5 @@
 import { LLMProviderInterface, ChatMessage, LLMResponse } from '../types';
-import { LLMProvider } from '../../../stores/settingsStore';
+import { LLMProvider, useSettingsStore } from '../../../stores/settingsStore';
 
 export class OpenAIProvider implements LLMProviderInterface {
     provider: LLMProvider;
@@ -20,10 +20,9 @@ export class OpenAIProvider implements LLMProviderInterface {
             'User-Agent': 'QuestKeeperAI/1.0',
         };
 
-        let baseUrl = 'https://api.openai.com/v1/chat/completions';
+        const baseUrl = this.getBaseUrl(model);
 
-        if (model.includes('/') || this.provider === 'openrouter') {
-            baseUrl = 'https://openrouter.ai/api/v1/chat/completions';
+        if (this.usesOpenRouter(model)) {
             headers['HTTP-Referer'] = 'https://questkeeper.ai';
             headers['X-Title'] = 'Quest Keeper AI';
         }
@@ -110,10 +109,9 @@ export class OpenAIProvider implements LLMProviderInterface {
             'User-Agent': 'QuestKeeperAI/1.0',
         };
 
-        let baseUrl = 'https://api.openai.com/v1/chat/completions';
+        const baseUrl = this.getBaseUrl(model);
 
-        if (model.includes('/') || this.provider === 'openrouter') {
-            baseUrl = 'https://openrouter.ai/api/v1/chat/completions';
+        if (this.usesOpenRouter(model)) {
             headers['HTTP-Referer'] = 'https://questkeeper.ai';
             headers['X-Title'] = 'Quest Keeper AI';
         }
@@ -318,5 +316,20 @@ export class OpenAIProvider implements LLMProviderInterface {
             return formatted;
         });
     }
-}
 
+    private getBaseUrl(model: string): string {
+        if (this.provider === 'local-openai') {
+            return useSettingsStore.getState().localOpenAIBaseUrl;
+        }
+
+        if (this.usesOpenRouter(model)) {
+            return 'https://openrouter.ai/api/v1/chat/completions';
+        }
+
+        return 'https://api.openai.com/v1/chat/completions';
+    }
+
+    private usesOpenRouter(model: string): boolean {
+        return this.provider !== 'local-openai' && (model.includes('/') || this.provider === 'openrouter');
+    }
+}

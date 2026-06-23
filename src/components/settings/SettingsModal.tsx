@@ -15,9 +15,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
         selectedProvider,
         providerModels,
         systemPrompt,
+        localOpenAIBaseUrl,
         setApiKey,
         setProvider,
         setModel,
+        setLocalOpenAIBaseUrl,
         setSystemPrompt,
     } = useSettingsStore();
 
@@ -50,9 +52,17 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
 
     if (!isOpen) return null;
 
+    const inputClasses = "w-full rounded border border-terminal-green bg-black px-3 py-2 text-terminal-green focus:border-terminal-green-bright focus:outline-none";
+    const apiKeyLabel = selectedProvider === 'local-openai'
+        ? 'LOCAL API KEY (OPTIONAL)'
+        : `${selectedProvider.toUpperCase()} API KEY`;
+    const apiKeyPlaceholder = selectedProvider === 'local-openai'
+        ? 'Optional dummy key, e.g. ollama'
+        : `Enter ${selectedProvider} API Key`;
+
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
-            <div className="w-full max-w-md rounded-lg border border-terminal-green bg-terminal-black p-6 shadow-glow">
+            <div className="max-h-[calc(100vh-2rem)] w-full max-w-md overflow-y-auto rounded-lg border border-terminal-green bg-terminal-black p-6 shadow-glow">
                 <div className="mb-6 flex items-center justify-between border-b border-terminal-green-dim pb-4">
                     <h2 className="text-xl font-bold text-terminal-green">CONFIGURATION</h2>
                     <button
@@ -76,6 +86,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
                             <option value="anthropic">Anthropic</option>
                             <option value="gemini">Google Gemini</option>
                             <option value="openrouter">OpenRouter</option>
+                            <option value="local-openai">Local OpenAI Compatible</option>
                         </select>
                         <p className="text-xs text-terminal-green-dim">
                             This sets the active provider for all chat interactions.
@@ -85,14 +96,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
                     {/* API Key */}
                     <div className="space-y-2">
                         <label className="block text-sm font-bold text-terminal-green">
-                            {selectedProvider.toUpperCase()} API KEY
+                            {apiKeyLabel}
                         </label>
                         <input
                             type="password"
                             value={apiKeys[selectedProvider]}
                             onChange={(e) => setApiKey(selectedProvider, e.target.value)}
-                            className="w-full rounded border border-terminal-green bg-black px-3 py-2 text-terminal-green focus:border-terminal-green-bright focus:outline-none"
-                            placeholder={`Enter ${selectedProvider} API Key`}
+                            className={inputClasses}
+                            placeholder={apiKeyPlaceholder}
                         />
                     </div>
 
@@ -160,9 +171,32 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
                                         <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
                                     </>
                                 )}
+                                {selectedProvider === 'local-openai' && (
+                                    <>
+                                        <option value="llama3.1">llama3.1</option>
+                                        <option value="qwen2.5">qwen2.5</option>
+                                        <option value="mistral">mistral</option>
+                                    </>
+                                )}
                             </select>
                         </div>
                     </div>
+
+                    {selectedProvider === 'local-openai' && (
+                        <div className="space-y-2">
+                            <label className="block text-sm font-bold text-terminal-green">BASE URL</label>
+                            <input
+                                type="text"
+                                value={localOpenAIBaseUrl}
+                                onChange={(e) => setLocalOpenAIBaseUrl(e.target.value)}
+                                className={inputClasses}
+                                placeholder="http://localhost:11434/v1/chat/completions"
+                            />
+                            <p className="text-xs text-terminal-green-dim">
+                                Use Ollama, llama.cpp server, or any OpenAI-compatible chat completions endpoint.
+                            </p>
+                        </div>
+                    )}
 
                     {/* System Prompt */}
                     <div className="space-y-2">

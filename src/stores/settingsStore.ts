@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
-export type LLMProvider = 'openai' | 'anthropic' | 'gemini' | 'openrouter';
+export type LLMProvider = 'openai' | 'anthropic' | 'gemini' | 'openrouter' | 'local-openai';
 
 interface SettingsState {
     apiKeys: {
@@ -9,18 +9,22 @@ interface SettingsState {
         anthropic: string;
         gemini: string;
         openrouter: string;
+        'local-openai': string;
     };
     providerModels: {
         openai: string;
         anthropic: string;
         gemini: string;
         openrouter: string;
+        'local-openai': string;
     };
     selectedProvider: LLMProvider;
     systemPrompt: string;
+    localOpenAIBaseUrl: string;
     setApiKey: (provider: LLMProvider, key: string) => void;
     setProvider: (provider: LLMProvider) => void;
     setModel: (provider: LLMProvider, model: string) => void;
+    setLocalOpenAIBaseUrl: (url: string) => void;
     setSystemPrompt: (prompt: string) => void;
     // Helper to get current model
     getSelectedModel: () => string;
@@ -220,15 +224,18 @@ export const useSettingsStore = create<SettingsState>()(
                 anthropic: '',
                 gemini: '',
                 openrouter: '',
+                'local-openai': 'ollama',
             },
             providerModels: {
                 openai: 'gpt-4.1',
                 anthropic: 'claude-sonnet-4-5-20250514',
                 gemini: 'gemini-2.0-flash',
                 openrouter: 'anthropic/claude-haiku-4.5',
+                'local-openai': 'llama3.1',
             },
             selectedProvider: 'openrouter',
             systemPrompt: DEFAULT_SYSTEM_PROMPT,
+            localOpenAIBaseUrl: 'http://localhost:11434/v1/chat/completions',
             setApiKey: (provider, key) =>
                 set((state) => ({
                     apiKeys: { ...state.apiKeys, [provider]: key },
@@ -238,6 +245,7 @@ export const useSettingsStore = create<SettingsState>()(
                 set((state) => ({
                     providerModels: { ...state.providerModels, [provider]: model },
                 })),
+            setLocalOpenAIBaseUrl: (url) => set({ localOpenAIBaseUrl: url }),
             setSystemPrompt: (prompt) => set({ systemPrompt: prompt }),
             getSelectedModel: () => {
                 const state = get();
@@ -246,6 +254,17 @@ export const useSettingsStore = create<SettingsState>()(
         }),
         {
             name: 'quest-keeper-settings',
+            merge: (persistedState, currentState) => {
+                const persisted = (persistedState ?? {}) as Partial<SettingsState>;
+
+                return {
+                    ...currentState,
+                    ...persisted,
+                    apiKeys: { ...currentState.apiKeys, ...persisted.apiKeys },
+                    providerModels: { ...currentState.providerModels, ...persisted.providerModels },
+                    localOpenAIBaseUrl: persisted.localOpenAIBaseUrl || currentState.localOpenAIBaseUrl,
+                };
+            },
         }
     )
 );

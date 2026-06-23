@@ -214,6 +214,23 @@ Quest Keeper AI/
 
 > **Note:** Your game data (characters, worlds, quests) is stored in `%APPDATA%\com.questkeeper.ai\mcp-data\` and persists across updates.
 
+### Ubuntu x86_64 Installation
+
+1. Go to the [Releases](https://github.com/Mnehmos/QuestKeeperAI-v2/releases) page
+2. Download the latest `Quest.Keeper.AI_*_amd64.deb`
+3. Install the package:
+
+```bash
+sudo apt install ./Quest.Keeper.AI_*_amd64.deb
+```
+
+4. Launch Quest Keeper AI from your desktop application menu
+
+The Linux package expects the bundled MCP sidecar and SQLite native module to be included with the app. In the repository, those release inputs are:
+
+- `src-tauri/binaries/rpg-mcp-server-x86_64-unknown-linux-gnu`
+- `src-tauri/binaries/better_sqlite3.node`
+
 ---
 
 ## 🚀 Development Setup
@@ -223,6 +240,22 @@ Quest Keeper AI/
 - **Node.js** 20+ and npm
 - **Rust** toolchain ([install](https://rustup.rs/))
 - **Tauri prerequisites** for your OS ([guide](https://tauri.app/v2/guides/getting-started/prerequisites))
+
+On Ubuntu x86_64, install the Tauri development prerequisites with:
+
+```bash
+sudo apt update
+sudo apt install -y \
+  libwebkit2gtk-4.1-dev \
+  build-essential \
+  curl \
+  wget \
+  file \
+  libxdo-dev \
+  libssl-dev \
+  libayatana-appindicator3-dev \
+  librsvg2-dev
+```
 
 ### Clone & Install
 
@@ -237,10 +270,16 @@ npm install
 
 ### Sidecar Binary
 
-The MCP server binary (`rpg-mcp-server-x86_64-pc-windows-msvc.exe`) must be present in `src-tauri/binaries/`. This binary is committed to the repository. If building from a fresh checkout without it, you'll need to:
+The MCP server binary must be present in `src-tauri/binaries/`. These binaries are committed to the repository. Expected sidecar inputs are:
+
+- Windows: `src-tauri/binaries/rpg-mcp-server-x86_64-pc-windows-msvc.exe`
+- Ubuntu x86_64: `src-tauri/binaries/rpg-mcp-server-x86_64-unknown-linux-gnu`
+- Native SQLite module: `src-tauri/binaries/better_sqlite3.node`
+
+If building from a fresh checkout without the MCP sidecar, you'll need to:
 
 1. Build it from the [rpg-mcp](https://github.com/Mnehmos/rpg-mcp) repository
-2. Place the binary at: `src-tauri/binaries/rpg-mcp-server-x86_64-pc-windows-msvc.exe`
+2. Place the binary at the platform-specific path above
 
 ### Running
 
@@ -281,12 +320,36 @@ This triggers the release workflow which builds the Windows installer and create
 2. Enter API keys for your preferred provider(s):
    - Anthropic API Key (recommended for Claude Opus 4.5)
    - OpenAI API Key
+   - Local OpenAI Compatible endpoint (Ollama, llama.cpp, or another local server)
    - Google AI API Key
    - OpenRouter API Key
 3. Select your preferred model
 4. Customize the system prompt layers (optional)
 
 Keys are stored in browser localStorage.
+
+### Local Inference
+
+Quest Keeper AI can use local OpenAI-compatible inference servers through the Local OpenAI Compatible provider. The default local settings are:
+
+- Base URL: `http://localhost:11434/v1`
+- Model: `llama3.1`
+- API key: optional; leave blank for local servers that do not require one
+
+For Ollama:
+
+```bash
+ollama pull llama3.1
+ollama serve
+```
+
+Then select Local OpenAI Compatible in settings and use `http://localhost:11434/v1` as the Base URL.
+
+For llama.cpp, start the OpenAI-compatible server and set the Base URL to its `/v1` endpoint, commonly:
+
+```text
+http://localhost:8080/v1
+```
 
 ### Seven-Layer Context System
 
@@ -385,6 +448,64 @@ The unified `rpg-mcp-server` binary is bundled in `src-tauri/binaries/`. It prov
 
 See [DEVELOPMENT_PLAN.md](docs/DEVELOPMENT_PLAN.md) for the full roadmap.
 
+## Ubuntu x86_64 Installation
+
+Download the `.deb` from Releases, then:
+
+```bash
+sudo apt install ./Quest.Keeper.AI_*_amd64.deb
+```
+
+For development:
+
+```bash
+sudo apt update
+sudo apt install -y \
+  libwebkit2gtk-4.1-dev \
+  build-essential \
+  curl \
+  wget \
+  file \
+  libxdo-dev \
+  libssl-dev \
+  libayatana-appindicator3-dev \
+  librsvg2-dev
+
+npm install
+npm run tauri dev
+```
+
+The Linux MCP sidecar must exist at:
+
+```txt
+src-tauri/binaries/rpg-mcp-server-x86_64-unknown-linux-gnu
+src-tauri/binaries/better_sqlite3.node
+```
+## Local Inference
+
+Select `Local OpenAI Compatible` in settings.
+
+For Ollama:
+
+```bash
+ollama serve
+ollama pull llama3.1
+```
+
+Use:
+
+```txt
+Base URL: http://localhost:11434/v1/chat/completions
+Model: llama3.1
+API key: optional / dummy
+```
+
+For llama.cpp server:
+
+```txt
+Base URL: http://localhost:8080/v1/chat/completions
+Model: any model name accepted by your server
+```
 ---
 
 ## 🧪 Testing
