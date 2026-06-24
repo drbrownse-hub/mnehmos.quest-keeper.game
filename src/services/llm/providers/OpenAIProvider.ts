@@ -8,6 +8,30 @@ export class OpenAIProvider implements LLMProviderInterface {
         this.provider = provider;
     }
 
+    private formatError(error: unknown): string {
+        if (error instanceof Error) return error.message;
+        if (typeof error === 'string') return error;
+        try {
+            return JSON.stringify(error);
+        } catch {
+            return String(error);
+        }
+    }
+
+    private async getFetch(): Promise<typeof fetch> {
+        const isTauriRuntime = Boolean((globalThis as any).isTauri || (globalThis as any).__TAURI_INTERNALS__);
+        if (this.provider === 'local-openai' && isTauriRuntime) {
+            try {
+                const { fetch: tauriFetch } = await import('@tauri-apps/plugin-http');
+                return tauriFetch as typeof fetch;
+            } catch (error) {
+                console.warn('[OpenAIProvider] Falling back to browser fetch for local-openai:', error);
+            }
+        }
+
+        return globalThis.fetch.bind(globalThis);
+    }
+
     async sendMessage(
         messages: ChatMessage[],
         apiKey: string,
@@ -17,7 +41,6 @@ export class OpenAIProvider implements LLMProviderInterface {
         const headers: Record<string, string> = {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${apiKey}`,
-            'User-Agent': 'QuestKeeperAI/1.0',
         };
 
         const baseUrl = this.getBaseUrl(model);
@@ -45,7 +68,8 @@ export class OpenAIProvider implements LLMProviderInterface {
         }
 
         try {
-            const response = await fetch(baseUrl, {
+            const fetcher = await this.getFetch();
+            const response = await fetcher(baseUrl, {
                 method: 'POST',
                 headers,
                 body: JSON.stringify(body),
@@ -88,8 +112,8 @@ export class OpenAIProvider implements LLMProviderInterface {
             }
 
             return result;
-        } catch (error: any) {
-            throw new Error(`${this.provider.toUpperCase()} Request Failed: ${error.message}`);
+        } catch (error: unknown) {
+            throw new Error(`${this.provider.toUpperCase()} Request Failed: ${this.formatError(error)}`);
         }
     }
 
@@ -106,7 +130,6 @@ export class OpenAIProvider implements LLMProviderInterface {
         const headers: Record<string, string> = {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${apiKey}`,
-            'User-Agent': 'QuestKeeperAI/1.0',
         };
 
         const baseUrl = this.getBaseUrl(model);
@@ -136,7 +159,8 @@ export class OpenAIProvider implements LLMProviderInterface {
         console.log(`[${this.provider}] Starting stream for model: ${model}`);
 
         try {
-            const response = await fetch(baseUrl, {
+            const fetcher = await this.getFetch();
+            const response = await fetcher(baseUrl, {
                 method: 'POST',
                 headers,
                 body: JSON.stringify(body),
@@ -246,8 +270,8 @@ export class OpenAIProvider implements LLMProviderInterface {
                 console.error(`[${this.provider}] Stream reading error:`, streamError);
                 onError(streamError.message || 'Stream reading failed');
             }
-        } catch (error: any) {
-            onError(error.message || 'Unknown streaming error');
+        } catch (error: unknown) {
+            onError(this.formatError(error) || 'Unknown streaming error');
         }
     }
 

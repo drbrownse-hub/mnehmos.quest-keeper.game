@@ -19,6 +19,13 @@
     },
     "shell:default",
     "shell:allow-stdin-write",
+    {
+      "identifier": "http:default",
+      "allow": [
+        { "url": "http://localhost:11434/**" },
+        { "url": "http://127.0.0.1:11434/**" }
+      ]
+    },
     "fs:default",
     "fs:allow-appdata-read-recursive",
     "fs:allow-appdata-write-recursive",

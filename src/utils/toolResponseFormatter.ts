@@ -1365,9 +1365,11 @@ export function formatGetEncounterState(data: any): string {
         participants.find((p: any) => p.id === currentTurn.participantId) ||
         participants[0];
 
-    const isEnemy = currentParticipant?.isEnemy ??
-        currentParticipant?.type === 'enemy' ??
-        !currentParticipant?.name?.toLowerCase().includes('player');
+    const isEnemy = currentParticipant?.isEnemy !== undefined
+        ? currentParticipant.isEnemy
+        : currentParticipant?.type === 'enemy'
+            ? true
+            : !currentParticipant?.name?.toLowerCase().includes('player');
 
     let output = `⚔️ COMBAT STATUS - ROUND ${round}\n`;
     output += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
@@ -1462,7 +1464,9 @@ export function formatExecuteCombatAction(data: any): string {
 export function formatAdvanceTurn(data: any): string {
     const nextParticipant = data.nextParticipant || data.currentParticipant || {};
     const nextName = nextParticipant.name || data.nextParticipantName || 'Unknown';
-    const isEnemy = nextParticipant.isEnemy ?? nextParticipant.type === 'enemy' ?? false;
+    const isEnemy = nextParticipant.isEnemy !== undefined
+        ? nextParticipant.isEnemy
+        : nextParticipant.type === 'enemy';
     const round = data.round || data.currentRound || 1;
     const newRound = data.newRound || data.roundAdvanced || false;
 

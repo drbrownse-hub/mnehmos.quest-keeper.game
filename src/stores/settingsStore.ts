@@ -3,6 +3,8 @@ import { persist } from 'zustand/middleware';
 
 export type LLMProvider = 'openai' | 'anthropic' | 'gemini' | 'openrouter' | 'local-openai';
 
+const DEFAULT_LOCAL_OPENAI_MODEL = 'igorls/gemma-4-E4B-it-heretic-GGUF:Q4_K_M';
+
 interface SettingsState {
     apiKeys: {
         openai: string;
@@ -231,7 +233,7 @@ export const useSettingsStore = create<SettingsState>()(
                 anthropic: 'claude-sonnet-4-5-20250514',
                 gemini: 'gemini-2.0-flash',
                 openrouter: 'anthropic/claude-haiku-4.5',
-                'local-openai': 'llama3.1',
+                'local-openai': DEFAULT_LOCAL_OPENAI_MODEL,
             },
             selectedProvider: 'openrouter',
             systemPrompt: DEFAULT_SYSTEM_PROMPT,
@@ -257,11 +259,16 @@ export const useSettingsStore = create<SettingsState>()(
             merge: (persistedState, currentState) => {
                 const persisted = (persistedState ?? {}) as Partial<SettingsState>;
 
+                const providerModels = { ...currentState.providerModels, ...persisted.providerModels };
+                if (providerModels['local-openai'] === 'llama3.1') {
+                    providerModels['local-openai'] = DEFAULT_LOCAL_OPENAI_MODEL;
+                }
+
                 return {
                     ...currentState,
                     ...persisted,
                     apiKeys: { ...currentState.apiKeys, ...persisted.apiKeys },
-                    providerModels: { ...currentState.providerModels, ...persisted.providerModels },
+                    providerModels,
                     localOpenAIBaseUrl: persisted.localOpenAIBaseUrl || currentState.localOpenAIBaseUrl,
                 };
             },

@@ -1,0 +1,16 @@
+name: quest-keeper-ai
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12
+  - nodejs=20
+  - git
+  - pip
+  - cmake
+  - make
+  - ninja
+  - pkg-config
+  - openssl
+  - sqlite
+  - zlib
+  - xz

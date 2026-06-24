@@ -142,9 +142,10 @@ export const SettingsView: React.FC = () => {
                                 )}
                                 {selectedProvider === 'local-openai' && (
                                     <>
-                                        <option value="llama3.1">llama3.1</option>
-                                        <option value="qwen2.5">qwen2.5</option>
-                                        <option value="mistral">mistral</option>
+                                        <option value="igorls/gemma-4-E4B-it-heretic-GGUF:Q4_K_M">Gemma 4 E4B Heretic Q4_K_M</option>
+                                        <option value="qwen3.5:4b">qwen3.5:4b</option>
+                                        <option value="granite4.1:8b">granite4.1:8b</option>
+                                        <option value="tinyq:latest">tinyq:latest</option>
                                     </>
                                 )}
                             </select>

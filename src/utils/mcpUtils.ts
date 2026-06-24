@@ -12,6 +12,34 @@
 const DEBUG_MCP_PARSING = false;
 
 /**
+ * Extract embedded JSON from formatted MCP response text.
+ * Matches blocks like:
+ * <!-- WORLD_MANAGE_JSON
+ * {...}
+ * WORLD_MANAGE_JSON -->
+ */
+export function extractEmbeddedJson(text: string, marker?: string): any | null {
+  if (!text) return null;
+
+  const escapedMarker = marker?.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const pattern = escapedMarker
+    ? new RegExp(`<!--\\s*${escapedMarker}\\n([\\s\\S]*?)\\n${escapedMarker}\\s*-->`)
+    : /<!--\s*([A-Z_]+JSON)\n([\s\S]*?)\n\1\s*-->/;
+
+  const match = text.match(pattern);
+  const jsonText = marker ? match?.[1] : match?.[2];
+
+  if (!jsonText) return null;
+
+  try {
+    return JSON.parse(jsonText);
+  } catch (e) {
+    if (DEBUG_MCP_PARSING) console.warn('[extractEmbeddedJson] Failed to parse embedded JSON:', e);
+    return null;
+  }
+}
+
+/**
  * Extract data from MCP tool response
  * Handles both MCP content wrapper format and direct JSON format
  */
@@ -67,6 +95,12 @@ export function parseMcpResponse<T>(result: any, fallback: T): T {
         }
         return parsed as T;
       } catch {
+        const embeddedJson = extractEmbeddedJson(textContent.text);
+        if (embeddedJson !== null) {
+          if (DEBUG_MCP_PARSING) console.log('[parseMcpResponse] Parsed embedded JSON');
+          return embeddedJson as T;
+        }
+
         if (DEBUG_MCP_PARSING) console.log('[parseMcpResponse] JSON parse failed, returning raw text');
         // If not JSON, return the text as-is (for simple responses like dice rolls)
         return textContent.text as unknown as T;
@@ -104,7 +138,7 @@ export function isErrorResponse(result: any): boolean {
       const parsed = JSON.parse(result.content[0].text);
       return !!parsed.error;
     } catch {
-      return false;
+      return !!extractEmbeddedJson(result.content[0].text)?.error;
     }
   }
   
@@ -130,6 +164,10 @@ export function getErrorMessage(result: any): string | null {
         return typeof parsed.error === 'string' ? parsed.error : parsed.error.message || 'Unknown error';
       }
     } catch {
+      const embeddedJson = extractEmbeddedJson(result.content[0].text);
+      if (embeddedJson?.error) {
+        return embeddedJson.message || embeddedJson.error.message || 'Unknown error';
+      }
       return null;
     }
   }
@@ -238,18 +276,12 @@ export function extractEmbeddedStateJson(text: string): any | null {
   console.log('[extractEmbeddedStateJson] Input length:', text?.length);
   console.log('[extractEmbeddedStateJson] Has STATE_JSON marker:', text?.includes('STATE_JSON'));
   
-  const match = text.match(/<!-- STATE_JSON\n([\s\S]*?)\nSTATE_JSON -->/);
-  console.log('[extractEmbeddedStateJson] Regex match result:', !!match);
-  
-  if (match && match[1]) {
-    try {
-      const parsed = JSON.parse(match[1]);
-      console.log('[extractEmbeddedStateJson] Successfully parsed JSON with keys:', Object.keys(parsed));
-      return parsed;
-    } catch (e) {
-      console.warn('[extractEmbeddedStateJson] Failed to parse embedded JSON:', e);
-      return null;
-    }
+  const parsed = extractEmbeddedJson(text, 'STATE_JSON');
+  console.log('[extractEmbeddedStateJson] Regex match result:', !!parsed);
+
+  if (parsed) {
+    console.log('[extractEmbeddedStateJson] Successfully parsed JSON with keys:', Object.keys(parsed));
+    return parsed;
   }
   return null;
 }

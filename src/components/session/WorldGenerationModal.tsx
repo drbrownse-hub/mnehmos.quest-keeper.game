@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { mcpManager } from '../../services/mcpClient';
 import { llmService } from '../../services/llm/LLMService';
 import { useSettingsStore } from '../../stores/settingsStore';
+import { getErrorMessage, isErrorResponse, parseMcpResponse } from '../../utils/mcpUtils';
 
 // ============================================
 // Types
@@ -174,9 +175,12 @@ Description: [one atmospheric sentence]`;
 
       console.log('[WorldGen] MCP result:', result);
 
-      const content = result.content?.[0];
-      if (content?.type === 'text') {
-        const data = JSON.parse(content.text);
+      if (isErrorResponse(result)) {
+        throw new Error(getErrorMessage(result) || 'MCP world generation failed');
+      }
+
+      const data = parseMcpResponse<any>(result, null);
+      if (data && typeof data === 'object') {
         worldId = data.id || data.worldId;
         console.log('[WorldGen] World ID:', worldId);
         
@@ -198,9 +202,12 @@ Description: [one atmospheric sentence]`;
             const tilesResult = await mcpManager.gameStateClient.callTool('get_world_tiles', {
               worldId: worldId,
             });
-            const tilesContent = tilesResult.content?.[0];
-            if (tilesContent?.type === 'text') {
-              const tilesData = JSON.parse(tilesContent.text);
+            if (isErrorResponse(tilesResult)) {
+              throw new Error(getErrorMessage(tilesResult) || 'MCP tile fetch failed');
+            }
+
+            const tilesData = parseMcpResponse<any>(tilesResult, null);
+            if (tilesData && typeof tilesData === 'object') {
               structures = tilesData.structures || [];
               console.log('[WorldGen] Fetched structures:', structures.length);
               addLog(`Retrieved ${structures.length} structure details`, 'success');

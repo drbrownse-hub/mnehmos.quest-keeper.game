@@ -681,14 +681,15 @@ The main POV character is ${characterName}.
 Set the mood, describe the immediate surroundings, and hint at adventure to come.
 Be evocative and concise.`;
 
-                        const response = await llmService.sendMessage([
+                        const response = await llmService.sendPlainMessage([
                           { role: 'user', content: prompt }
                         ]);
                         
                         updateField('startingContext', response.trim());
                       } catch (e) {
                         console.error('Failed to generate context:', e);
-                        alert('Failed to generate context. Check your API key in settings.');
+                        const message = e instanceof Error ? e.message : String(e);
+                        alert(`Failed to generate context: ${message}`);
                       } finally {
                         setIsGeneratingContext(false);
                       }

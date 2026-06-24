@@ -3,6 +3,7 @@ import { mcpManager } from '../../services/mcpClient';
 import { parseMcpResponse } from '../../utils/mcpUtils';
 import { useGameStateStore } from '../../stores/gameStateStore';
 import { getStartingGear, getStartingItemIds } from '../../data/startingGear';
+import { llmService } from '../../services/llm/LLMService';
 
 interface CharacterCreationModalProps {
   isOpen: boolean;
@@ -55,6 +56,53 @@ const CLASSES = [
 ];
 
 const DEFAULT_STATS: AbilityScores = { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 };
+
+const extractJsonObject = (text: string): any | null => {
+  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  const candidate = fenced?.[1] || text;
+  const start = candidate.indexOf('{');
+  const end = candidate.lastIndexOf('}');
+  if (start === -1 || end === -1 || end <= start) return null;
+
+  try {
+    return JSON.parse(candidate.slice(start, end + 1));
+  } catch {
+    return null;
+  }
+};
+
+const parseJsonString = (value: unknown): any | null => {
+  if (typeof value !== 'string') return null;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return null;
+  }
+};
+
+const parseNumericList = (value: unknown): number[] | null => {
+  if (!Array.isArray(value)) return null;
+  const numbers = value.map((item) => Number(item));
+  return numbers.every(Number.isFinite) ? numbers : null;
+};
+
+const extractDiceFromRollSteps = (steps: unknown): { rolls: number[] | null; dropped: number | null } => {
+  if (!Array.isArray(steps)) return { rolls: null, dropped: null };
+  const text = steps.join('\n');
+  const rollsMatch = text.match(/Rolled\s+\d+d\d+:\s*\[([^\]]+)\]/i);
+  const droppedMatch = text.match(/Dropped:\s*\[([^\]]+)\]/i);
+
+  const parseList = (raw?: string) => raw
+    ? raw.split(',').map((part) => Number(part.trim())).filter(Number.isFinite)
+    : [];
+
+  const rolls = parseList(rollsMatch?.[1]);
+  const dropped = parseList(droppedMatch?.[1])[0] ?? null;
+  return {
+    rolls: rolls.length > 0 ? rolls : null,
+    dropped
+  };
+};
 
 export const CharacterCreationModal: React.FC<CharacterCreationModalProps> = ({
   isOpen,
@@ -111,10 +159,20 @@ export const CharacterCreationModal: React.FC<CharacterCreationModalProps> = ({
       const data = parseMcpResponse<any>(result, null);
       
       if (data) {
-        // Parse the roll result
-        const total = data.total || data.result || 10;
-        const rolls = data.metadata?.rolls || data.rolls || data.dice || [3, 3, 3, 3];
-        const dropped = data.metadata?.dropped?.[0] || data.dropped?.[0] || Math.min(...rolls);
+        const formatted = parseJsonString(data.formatted);
+        const stepDice = extractDiceFromRollSteps(data.rolls || formatted?.steps);
+        const rolls = parseNumericList(data.metadata?.rolls)
+          || parseNumericList(formatted?.metadata?.rolls)
+          || parseNumericList(data.dice)
+          || stepDice.rolls
+          || [3, 3, 3, 3];
+        const total = Number(data.total ?? data.result ?? formatted?.result ?? 10);
+        const dropped = Number(
+          data.metadata?.dropped?.[0]
+          ?? data.dropped?.[0]
+          ?? stepDice.dropped
+          ?? Math.min(...rolls)
+        );
         
         setRollResults(prev => ({
           ...prev,
@@ -203,56 +261,51 @@ export const CharacterCreationModal: React.FC<CharacterCreationModalProps> = ({
     setError(null);
 
     try {
-      // Get resolved class name (handle custom class option)
       const actualClass = charClass === 'Other' ? customClass : charClass;
+      const actualRace = race === 'Other' ? customRace : race;
+      const statSummary = ABILITY_NAMES
+        .map((ability) => `${ability.toUpperCase()} ${stats[ability]}`)
+        .join(', ');
+      const prompt = `Generate concise D&D character details for this character.
 
-      // TODO: In future, use LLM API to generate personalized backstory
-      // For now, we generate defaults based on class
-      const backstories: Record<string, string> = {
-        'Fighter': `${name} was forged in the crucible of war, learning to fight before learning to read. The scars they carry tell stories of battles won and comrades lost.`,
-        'Wizard': `${name} discovered magic in the dusty tomes of an abandoned library, spending years mastering arcane arts that others deemed forbidden.`,
-        'Rogue': `${name} grew up on streets that taught harsh lessons about survival. Quick hands and quicker wits became their tools of trade.`,
-        'Cleric': `${name} heard the calling in a moment of crisis, when divine light pierced through darkness to save them from certain doom.`,
-        'Ranger': `${name} left civilization behind after a tragedy, finding solace and purpose in the wild places where few dare to tread.`,
-        'Paladin': `${name} swore a sacred oath after witnessing injustice that shook their faith, vowing to be the shield others needed.`,
-        'Barbarian': `${name} channels the fury of their ancestors, a tempest of rage that protects their tribe and terrifies their foes.`,
-        'Bard': `${name} collects stories like others collect coins, believing that the right tale at the right moment can change the world.`,
-        'Druid': `${name} speaks for the voiceless—the trees, the beasts, the very earth itself—and defends nature's balance.`,
-        'Monk': `${name} spent years in silent meditation, honing body and mind into a perfect instrument of discipline.`,
-        'Sorcerer': `${name}'s blood carries magic from an ancient source, a power that sometimes feels more like a curse than a gift.`,
-        'Warlock': `${name} made a bargain in a desperate hour, trading an unknown price for powers that whisper secrets in the dark.`,
-        'Artificer': `${name} sees magic as just another form of engineering, building wonders that blur the line between arcane and mechanical.`,
-      };
+Name: ${name.trim()}
+Race: ${actualRace || 'Unspecified'}
+Class: ${actualClass || 'Unspecified'}
+Level: ${level}
+Ability scores: ${statSummary}
+Player context: ${enhancePrompt.trim() || 'None'}
 
-      const personalities: Record<string, string> = {
-        'Fighter': 'Direct and practical. Respects strength but values loyalty above all. Has a dry sense of humor about violence.',
-        'Wizard': 'Endlessly curious, sometimes to a fault. Tends to lecture. Secretly fears their knowledge is never enough.',
-        'Rogue': 'Charming and evasive. Trust is hard-earned. Always knows the nearest exit.',
-        'Cleric': 'Compassionate but not naive. Struggles with doubt privately. Finds comfort in ritual.',
-        'Ranger': 'Quiet and observant. More comfortable with animals than people. Fiercely protective of the vulnerable.',
-        'Paladin': 'Earnest and idealistic. Sometimes rigid in their beliefs. Haunted by the fear of falling short.',
-        'Barbarian': 'Honest to the point of bluntness. Fiercely loyal. Finds civilized customs baffling.',
-        'Bard': 'Dramatic and charismatic. Never met a stranger. Uses humor to deflect from deeper feelings.',
-        'Druid': 'Patient and philosophical. Views mortal concerns as fleeting. Has strange dietary preferences.',
-        'Monk': 'Centered and deliberate. Speaks rarely but meaningfully. Struggles with attachment.',
-        'Sorcerer': 'Intense and unpredictable. Fears losing control. Dreams vividly and often prophetically.',
-        'Warlock': 'Secretive about their patron. Pragmatic about morality. Haunted by whispers only they can hear.',
-        'Artificer': 'Analytical and inventive. Gets lost in projects. Views problems as puzzles to solve.',
-      };
+Return only valid JSON with this shape:
+{
+  "backstory": "2 short paragraphs, specific to the character",
+  "personality": "3-5 concrete personality traits, motivations, and quirks"
+}`;
 
-      const defaultBackstory = `${name} comes from humble beginnings, their path shaped by circumstances that drove them to adventure. The road ahead holds answers to questions they've only begun to ask.`;
-      const defaultPersonality = 'Determined and adaptable. Values their companions. Driven by a need to prove themselves.';
+      const response = await llmService.sendPlainMessage([
+        {
+          role: 'system',
+          content: 'You generate concise fantasy RPG character details. Return only the requested JSON.'
+        },
+        { role: 'user', content: prompt }
+      ]);
 
-      setBackstory(backstories[actualClass] || defaultBackstory);
-      setPersonality(personalities[actualClass] || defaultPersonality);
+      const parsed = extractJsonObject(response);
+      if (parsed?.backstory || parsed?.personality) {
+        setBackstory(String(parsed.backstory || '').trim());
+        setPersonality(String(parsed.personality || '').trim());
+        return;
+      }
+
+      setBackstory(response.trim());
+      setPersonality('');
 
     } catch (err) {
       console.error('AI enhancement failed:', err);
-      setError('Failed to generate character details. Please try again or enter manually.');
+      setError(`Failed to generate character details: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
       setIsEnhancing(false);
     }
-  }, [name, race, customRace, charClass, customClass, level, enhancePrompt]);
+  }, [name, race, customRace, charClass, customClass, level, stats, enhancePrompt]);
 
   // Create character via MCP
   const createCharacter = useCallback(async () => {

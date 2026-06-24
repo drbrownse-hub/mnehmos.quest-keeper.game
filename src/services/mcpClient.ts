@@ -1,6 +1,7 @@
 import { Command, Child } from '@tauri-apps/plugin-shell';
 import { v4 as uuidv4 } from 'uuid';
 import { eventBus } from '../utils/eventBus';
+import { extractEmbeddedJson } from '../utils/mcpUtils';
 
 interface JsonRpcRequest {
     jsonrpc: '2.0';
@@ -20,6 +21,132 @@ interface JsonRpcResponse {
     };
 }
 
+type ToolCall = {
+    name: string;
+    args: any;
+    compatibilityMode?: boolean;
+};
+
+const withAction = (toolName: string, action: string, args: any, extra: Record<string, any> = {}): ToolCall => ({
+    name: toolName,
+    args: { ...(args || {}), ...extra, action },
+    compatibilityMode: true,
+});
+
+const withId = (args: any, field: string) => {
+    const normalized = { ...(args || {}) };
+    if (normalized.id !== undefined && normalized[field] === undefined) {
+        normalized[field] = normalized.id;
+        delete normalized.id;
+    }
+    return normalized;
+};
+
+const normalizeDiceArgs = (args: any, exportFormat = 'plaintext') => ({
+    ...(args || {}),
+    exportFormat: args?.exportFormat === 'steps' ? exportFormat : (args?.exportFormat || exportFormat),
+});
+
+const LEGACY_TOOL_ALIASES: Record<string, (args: any) => ToolCall> = {
+    generate_world: (args) => withAction('world_manage', 'generate', args),
+    create_world: (args) => withAction('world_manage', 'create', args),
+    list_worlds: (args) => withAction('world_manage', 'list', args),
+    get_world: (args) => withAction('world_manage', 'get', args),
+    delete_world: (args) => withAction('world_manage', 'delete', args),
+    update_world: (args) => withAction('world_manage', 'update', args),
+    update_world_environment: (args) => withAction('world_manage', 'update', {
+        ...(args || {}),
+        id: args?.id ?? args?.worldId,
+        environment: args?.environment ?? args,
+    }),
+    get_world_state: (args) => withAction('world_manage', 'get_state', args),
+    get_world_tiles: (args) => withAction('world_map', 'tiles', args),
+    get_world_map_overview: (args) => withAction('world_map', 'overview', args),
+    get_region_map: (args) => withAction('world_map', 'region', args),
+
+    create_character: (args) => withAction('character_manage', 'create', args),
+    get_character: (args) => withAction('character_manage', 'get', withId(args, 'characterId')),
+    list_characters: (args) => withAction('character_manage', 'list', args),
+    update_character: (args) => withAction('character_manage', 'update', withId(args, 'characterId')),
+    delete_character: (args) => withAction('character_manage', 'delete', withId(args, 'characterId')),
+    level_up: (args) => withAction('character_manage', 'level_up', withId(args, 'characterId')),
+
+    create_party: (args) => withAction('party_manage', 'create', args),
+    get_party: (args) => withAction('party_manage', 'get', withId(args, 'partyId')),
+    list_parties: (args) => withAction('party_manage', 'list', args),
+    update_party: (args) => withAction('party_manage', 'update', withId(args, 'partyId')),
+    delete_party: (args) => withAction('party_manage', 'delete', withId(args, 'partyId')),
+    add_party_member: (args) => withAction('party_manage', 'add_member', withId(args, 'partyId')),
+    remove_party_member: (args) => withAction('party_manage', 'remove_member', withId(args, 'partyId')),
+    update_party_member: (args) => withAction('party_manage', 'update_member', withId(args, 'partyId')),
+    set_party_leader: (args) => withAction('party_manage', 'set_leader', withId(args, 'partyId')),
+    set_active_character: (args) => withAction('party_manage', 'set_active', withId(args, 'partyId')),
+    get_unassigned_characters: (args) => withAction('party_manage', 'get_unassigned', args),
+    get_party_context: (args) => withAction('party_manage', 'get_context', withId(args, 'partyId')),
+    move_party: (args) => withAction('party_manage', 'move', withId(args, 'partyId')),
+    get_party_position: (args) => withAction('party_manage', 'get_position', withId(args, 'partyId')),
+
+    give_item: (args) => withAction('inventory_manage', 'give', args),
+    remove_item: (args) => withAction('inventory_manage', 'remove', args),
+    equip_item: (args) => withAction('inventory_manage', 'equip', args),
+    unequip_item: (args) => withAction('inventory_manage', 'unequip', args),
+    get_inventory_detailed: (args) => withAction('inventory_manage', 'get_detailed', args),
+
+    list_corpses_in_encounter: (args) => withAction('corpse_manage', 'list_in_encounter', args),
+    get_corpse_inventory: (args) => withAction('corpse_manage', 'get_inventory', args),
+    loot_corpse: (args) => withAction('corpse_manage', 'loot', args),
+
+    create_encounter: (args) => withAction('combat_manage', 'create', args),
+    get_encounter_state: (args) => withAction('combat_manage', 'get', args),
+    end_encounter: (args) => withAction('combat_manage', 'end', args),
+    load_encounter: (args) => withAction('combat_manage', 'load', args),
+    advance_turn: (args) => withAction('combat_manage', 'advance', args),
+    execute_combat_action: (args) => withAction('combat_action', args?.action || 'attack', args),
+    render_map: (args) => withAction('combat_map', 'render', args),
+
+    get_active_auras: (args) => withAction('aura_manage', 'list', args),
+    break_concentration: (args) => withAction('concentration_manage', 'break', args),
+    take_short_rest: (args) => withAction('rest_manage', 'short', args),
+    take_long_rest: (args) => withAction('rest_manage', 'long', args),
+    dice_roll: (args) => withAction('math_manage', 'roll', normalizeDiceArgs(args)),
+
+    get_quest_log: (args) => withAction('quest_manage', 'get_log', args),
+    get_secrets_for_context: (args) => withAction('secret_manage', 'get_context', args),
+    get_narrative_context: (args) => withAction('narrative_manage', 'get_context', args),
+    get_narrative_context_notes: (args) => withAction('narrative_manage', 'search', args),
+    search_narrative_notes: (args) => withAction('narrative_manage', 'search', args),
+
+    get_npc_context: (args) => withAction('npc_manage', 'get_context', args),
+    get_recent_interactions: (args) => withAction('npc_manage', 'get_recent', args),
+    get_npc_relationship: (args) => withAction('npc_manage', 'get_relationship', args),
+    get_conversation_history: (args) => withAction('npc_manage', 'get_history', args),
+    look_at_surroundings: (args) => withAction('spatial_manage', 'look', args),
+
+    roll_skill_check: (args) => withAction('math_manage', 'roll', normalizeDiceArgs({ ...args, expression: args?.expression || '1d20' }, 'json')),
+    roll_ability_check: (args) => withAction('math_manage', 'roll', normalizeDiceArgs({ ...args, expression: args?.expression || '1d20' }, 'json')),
+    roll_saving_throw: (args) => withAction('math_manage', 'roll', normalizeDiceArgs({ ...args, expression: args?.expression || '1d20' }, 'json')),
+};
+
+export function mapLegacyToolCall(name: string, args: any): ToolCall {
+    const mapper = LEGACY_TOOL_ALIASES[name];
+    return mapper ? mapper(args || {}) : { name, args };
+}
+
+function normalizeCompatibilityResponse(result: any): any {
+    const text = result?.content?.find?.((c: any) => c.type === 'text')?.text;
+    if (!text) return result;
+
+    const embeddedJson = extractEmbeddedJson(text);
+    if (!embeddedJson) return result;
+
+    return {
+        ...result,
+        content: result.content.map((c: any) => (
+            c.type === 'text' ? { ...c, text: JSON.stringify(embeddedJson) } : c
+        )),
+    };
+}
+
 // Timeout configurations for different operation types
 const TIMEOUTS = {
     default: 30000,     // 30s for most operations
@@ -31,6 +158,8 @@ const TIMEOUTS = {
 // Operations that may take longer (world gen/restore, batch ops)
 const COMPLEX_OPERATIONS = new Set([
     // World operations - can trigger full regeneration from seed
+    'world_manage',
+    'world_map',
     'generate_world',
     'create_world',
     'get_world_tiles',      // Large response + may trigger world restore
@@ -345,10 +474,12 @@ export class McpClient {
     }
 
     async callTool(name: string, args: any) {
-        return this.sendRequest('tools/call', {
-            name,
-            arguments: args,
+        const mapped = mapLegacyToolCall(name, args);
+        const result = await this.sendRequest('tools/call', {
+            name: mapped.name,
+            arguments: mapped.args,
         });
+        return mapped.compatibilityMode ? normalizeCompatibilityResponse(result) : result;
     }
 
     /**

@@ -114,6 +114,16 @@ class LLMService {
         }
     }
 
+    public async sendPlainMessage(history: ChatMessage[]): Promise<string> {
+        const provider = this.getProvider();
+        const apiKey = this.getApiKey();
+        const model = useSettingsStore.getState().getSelectedModel();
+
+        console.log(`[LLMService] Plain message - Provider: ${provider.provider}, Model: ${model}`);
+        const response = await provider.sendMessage(history, apiKey, model);
+        return response.content || '';
+    }
+
     /**
      * Execute multiple tool calls in parallel
      */
