@@ -151,6 +151,11 @@ export interface CharacterStats {
   level: number;
   class: string;
   race?: string;
+  background?: string;
+  backstory?: string;
+  personality?: string;
+  portraitIcon?: string;
+  portraitColor?: { name: string; bg: string; border: string };
   hp: { current: number; max: number };
   xp: { current: number; max: number };
   stats: {
@@ -234,6 +239,7 @@ interface GameState {
 function parseCharacterFromJson(char: any): CharacterStats | null {
   try {
     if (!char || !char.name) return null;
+    const appDetails = parseCharacterBehaviorDetails(char.behavior);
 
     const level = char.level || 1;
     const currentXp = char.xp ?? char.experience ?? 0;
@@ -274,6 +280,11 @@ function parseCharacterFromJson(char: any): CharacterStats | null {
       level: level,
       class: char.class || char.characterClass || 'Adventurer',
       race: char.race,
+      background: char.background,
+      backstory: char.backstory || appDetails.backstory,
+      personality: char.personality || appDetails.personality,
+      portraitIcon: char.portraitIcon || appDetails.portraitIcon,
+      portraitColor: char.portraitColor || appDetails.portraitColor,
       hp: {
         current: char.hp || 0,
         max: char.maxHp || char.hp || 0
@@ -315,6 +326,24 @@ function parseCharacterFromJson(char: any): CharacterStats | null {
   } catch (error) {
     console.error('[parseCharacterFromJson] Failed to parse character:', error);
     return null;
+  }
+}
+
+function parseCharacterBehaviorDetails(behavior: unknown): Partial<CharacterStats> {
+  if (typeof behavior !== 'string') return {};
+  const match = behavior.match(/<!--\s*QUEST_KEEPER_CHARACTER_DETAILS\n([\s\S]*?)\nQUEST_KEEPER_CHARACTER_DETAILS\s*-->/);
+  if (!match?.[1]) return {};
+
+  try {
+    const parsed = JSON.parse(match[1]);
+    return {
+      backstory: typeof parsed.backstory === 'string' ? parsed.backstory : undefined,
+      personality: typeof parsed.personality === 'string' ? parsed.personality : undefined,
+      portraitIcon: typeof parsed.portraitIcon === 'string' ? parsed.portraitIcon : undefined,
+      portraitColor: parsed.portraitColor && typeof parsed.portraitColor === 'object' ? parsed.portraitColor : undefined,
+    };
+  } catch {
+    return {};
   }
 }
 

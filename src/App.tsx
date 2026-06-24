@@ -8,7 +8,7 @@ import { useSessionStore } from "./stores/sessionStore";
 import { eventPoller } from "./services/eventPoller";
 import "./App.css";
 import { useUIStore } from "./stores/uiStore";
-import { CharacterCreationModal } from "./components/adventure/CharacterCreationModal";
+import { CharacterCreationModal } from "./components/party/CharacterCreationModal";
 import { CampaignSetupWizard } from "./components/session/CampaignSetupWizard";
 import { ThemeProvider } from "./context/ThemeContext";
 
@@ -74,9 +74,11 @@ function App() {
       <AppLayout />
       <CharacterCreationModal 
         isOpen={showCharacterModal} 
-        onClose={(newCharacterId) => {
+        onClose={() => {
             closeCharacterModal();
-            if (characterModalCallback) characterModalCallback(newCharacterId || '');
+        }}
+        onCreated={(newCharacterId) => {
+          if (characterModalCallback) characterModalCallback(newCharacterId);
         }}
       />
       <CampaignSetupWizard
@@ -92,4 +94,3 @@ function App() {
 }
 
 export default App;
-

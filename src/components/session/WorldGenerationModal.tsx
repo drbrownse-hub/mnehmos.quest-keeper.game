@@ -3,6 +3,7 @@ import { mcpManager } from '../../services/mcpClient';
 import { llmService } from '../../services/llm/LLMService';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { getErrorMessage, isErrorResponse, parseMcpResponse } from '../../utils/mcpUtils';
+import { canUseSelectedAiProvider } from '../../utils/characterCreationOptions';
 
 // ============================================
 // Types
@@ -73,7 +74,8 @@ export const WorldGenerationModal: React.FC<WorldGenerationModalProps> = ({
   const abortRef = useRef(false);
   const hasStartedRef = useRef(false);
 
-  const apiKey = useSettingsStore((s) => s.apiKeys.openrouter);
+  const selectedProvider = useSettingsStore((s) => s.selectedProvider);
+  const selectedProviderApiKey = useSettingsStore((s) => s.apiKeys[s.selectedProvider] || '');
 
   // Add log entry
   const addLog = useCallback((message: string, type: GenerationLog['type'] = 'info') => {
@@ -116,7 +118,7 @@ Description: [one atmospheric sentence]`;
 
     try {
       console.log('[WorldGen] Generating lore for:', poi.type);
-      const response = await llmService.sendMessage([
+      const response = await llmService.sendPlainMessage([
         { role: 'user', content: prompt }
       ]);
       
@@ -225,7 +227,9 @@ Description: [one atmospheric sentence]`;
       setCurrentPhase(9);
       setProgress(85);
       
-      if (!abortRef.current && structures.length > 0 && apiKey) {
+      const aiReadiness = canUseSelectedAiProvider(selectedProvider, selectedProviderApiKey);
+
+      if (!abortRef.current && structures.length > 0 && aiReadiness.usable) {
         addLog('The scribes begin recording the legends...', 'lore');
         
         const worldContext = `A newly formed world named "${worldName}" with diverse regions. Settlements favor rivers and coasts.`;
@@ -258,9 +262,9 @@ Description: [one atmospheric sentence]`;
           
           await new Promise((r) => setTimeout(r, 200));
         }
-      } else if (!apiKey) {
-        addLog('⚠️ No OpenRouter API key - skipping lore generation', 'info');
-        addLog('Configure API key in settings for rich world lore', 'info');
+      } else if (!aiReadiness.usable) {
+        addLog('⚠️ AI provider is not configured - skipping lore generation', 'info');
+        addLog(aiReadiness.reason, 'info');
       } else if (structures.length === 0) {
         addLog('⚠️ No structures to chronicle', 'info');
       }
@@ -290,7 +294,7 @@ Description: [one atmospheric sentence]`;
     } finally {
       setIsGenerating(false);
     }
-  }, [isOpen, isGenerating, seed, worldName, apiKey, addLog, generatePOILore, onComplete]);
+  }, [isOpen, isGenerating, seed, worldName, selectedProvider, selectedProviderApiKey, addLog, generatePOILore, onComplete]);
 
   // Start generation when modal opens
   useEffect(() => {

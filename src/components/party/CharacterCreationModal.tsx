@@ -2,8 +2,18 @@ import React, { useState, useCallback } from 'react';
 import { mcpManager } from '../../services/mcpClient';
 import { parseMcpResponse } from '../../utils/mcpUtils';
 import { useGameStateStore } from '../../stores/gameStateStore';
-import { getStartingGear, getStartingItemIds } from '../../data/startingGear';
 import { llmService } from '../../services/llm/LLMService';
+import { provisionCharacterEquipment } from '../../services/characterProvisioning';
+import {
+  BACKGROUND_OPTIONS,
+  CLASS_EQUIPMENT_OPTIONS,
+  PORTRAIT_COLORS,
+  PORTRAIT_ICONS,
+  canUseSelectedAiProvider,
+  getBackgroundByName,
+  resolveStartingEquipment,
+} from '../../utils/characterCreationOptions';
+import { useSettingsStore } from '../../stores/settingsStore';
 
 interface CharacterCreationModalProps {
   isOpen: boolean;
@@ -117,6 +127,14 @@ export const CharacterCreationModal: React.FC<CharacterCreationModalProps> = ({
   const [customClass, setCustomClass] = useState('');
   const [level, setLevel] = useState(1);
   const [characterType, setCharacterType] = useState<CharacterType>('pc');
+  const [backgroundName, setBackgroundName] = useState('Folk Hero');
+  const [customBackground, setCustomBackground] = useState('');
+  const [portraitIcon, setPortraitIcon] = useState(PORTRAIT_ICONS[0]);
+  const [portraitColor, setPortraitColor] = useState(PORTRAIT_COLORS[0]);
+  const [selectedClassItems, setSelectedClassItems] = useState<string[]>(CLASS_EQUIPMENT_OPTIONS.Fighter);
+  const [selectedBackgroundItems, setSelectedBackgroundItems] = useState<string[]>(
+    getBackgroundByName('Folk Hero')?.suggestedItems || []
+  );
   
   // Ability Scores
   const [stats, setStats] = useState<AbilityScores>({ ...DEFAULT_STATS });
@@ -140,6 +158,8 @@ export const CharacterCreationModal: React.FC<CharacterCreationModalProps> = ({
   const [activeTab, setActiveTab] = useState<'basic' | 'stats' | 'details'>('basic');
   
   const syncState = useGameStateStore(state => state.syncState);
+  const selectedProvider = useSettingsStore(state => state.selectedProvider);
+  const providerApiKey = useSettingsStore(state => state.apiKeys[state.selectedProvider] || '');
 
   // Calculate point buy remaining
   const getPointBuySpent = useCallback(() => {
@@ -250,10 +270,47 @@ export const CharacterCreationModal: React.FC<CharacterCreationModalProps> = ({
     setStats(prev => ({ ...prev, [ability]: newScore }));
   }, [stats, getPointBuySpent]);
 
+  const actualClass = charClass === 'Other' ? customClass : charClass;
+  const actualBackground = backgroundName === 'Custom' ? customBackground : backgroundName;
+  const resolvedEquipment = resolveStartingEquipment({
+    characterClass: actualClass || 'Fighter',
+    background: actualBackground || 'Custom',
+    selectedClassItems,
+    selectedBackgroundItems,
+  });
+
+  const handleClassChange = useCallback((nextClass: string) => {
+    setCharClass(nextClass);
+    setSelectedClassItems(CLASS_EQUIPMENT_OPTIONS[nextClass] || ['Dagger', 'Explorer Pack']);
+  }, []);
+
+  const handleBackgroundChange = useCallback((nextBackground: string) => {
+    setBackgroundName(nextBackground);
+    setSelectedBackgroundItems(getBackgroundByName(nextBackground)?.suggestedItems || []);
+  }, []);
+
+  const toggleClassItem = useCallback((item: string) => {
+    setSelectedClassItems(prev => (
+      prev.includes(item) ? prev.filter(existing => existing !== item) : [...prev, item]
+    ));
+  }, []);
+
+  const toggleBackgroundItem = useCallback((item: string) => {
+    setSelectedBackgroundItems(prev => (
+      prev.includes(item) ? prev.filter(existing => existing !== item) : [...prev, item]
+    ));
+  }, []);
+
   // AI Enhancement
   const enhanceWithAI = useCallback(async () => {
     if (!name.trim()) {
       setError('Please enter a character name first');
+      return;
+    }
+
+    const readiness = canUseSelectedAiProvider(selectedProvider, providerApiKey);
+    if (!readiness.usable) {
+      setError(readiness.reason);
       return;
     }
 
@@ -271,6 +328,7 @@ export const CharacterCreationModal: React.FC<CharacterCreationModalProps> = ({
 Name: ${name.trim()}
 Race: ${actualRace || 'Unspecified'}
 Class: ${actualClass || 'Unspecified'}
+Background: ${actualBackground || 'Unspecified'}
 Level: ${level}
 Ability scores: ${statSummary}
 Player context: ${enhancePrompt.trim() || 'None'}
@@ -305,7 +363,7 @@ Return only valid JSON with this shape:
     } finally {
       setIsEnhancing(false);
     }
-  }, [name, race, customRace, charClass, customClass, level, stats, enhancePrompt]);
+  }, [name, race, customRace, charClass, customClass, actualBackground, level, stats, enhancePrompt, selectedProvider, providerApiKey]);
 
   // Create character via MCP
   const createCharacter = useCallback(async () => {
@@ -320,6 +378,7 @@ Return only valid JSON with this shape:
     try {
       const actualRace = race === 'Other' ? customRace : race;
       const actualClass = charClass === 'Other' ? customClass : charClass;
+      const finalBackground = backgroundName === 'Custom' ? customBackground : backgroundName;
 
       // Calculate HP based on class and CON
       const conMod = Math.floor((stats.con - 10) / 2);
@@ -336,8 +395,17 @@ Return only valid JSON with this shape:
       const dexMod = Math.floor((stats.dex - 10) / 2);
       const baseAc = 10 + dexMod;
 
-      // Build behavior string from backstory/personality
-      const behavior = [backstory, personality].filter(Boolean).join(' ');
+      const behaviorMetadata = {
+        backstory,
+        personality,
+        portraitIcon,
+        portraitColor,
+      };
+      const behavior = [
+        `<!-- QUEST_KEEPER_CHARACTER_DETAILS\n${JSON.stringify(behaviorMetadata)}\nQUEST_KEEPER_CHARACTER_DETAILS -->`,
+        backstory,
+        personality,
+      ].filter(Boolean).join('\n\n');
 
       // Debug: Check if MCP client is connected
       const isConnected = mcpManager.gameStateClient.isConnected();
@@ -355,6 +423,10 @@ Return only valid JSON with this shape:
         level,
         stats,
         characterType,
+        background: finalBackground || undefined,
+        startingGold: resolvedEquipment.gold,
+        provisionEquipment: false,
+        customEquipment: resolvedEquipment.items,
         // Optional fields
         ...(actualRace && { race: actualRace }),
         ...(actualClass && { class: actualClass }),
@@ -373,30 +445,17 @@ Return only valid JSON with this shape:
 
       if (data && data.id) {
         console.log('[CharacterCreationModal] Character created:', data.id);
-        
-        // Give starting gear based on class and level
-        const startingGear = getStartingGear(actualClass, level);
-        const itemIds = getStartingItemIds(startingGear);
-        
-        console.log('[CharacterCreationModal] Giving starting gear:', itemIds);
-        
-        for (const itemId of itemIds) {
+
+        if (resolvedEquipment.items.length > 0) {
           try {
-            await mcpManager.gameStateClient.callTool('give_item', {
+            await provisionCharacterEquipment(mcpManager.gameStateClient, {
               characterId: data.id,
-              itemId: itemId,
-              quantity: 1
+              items: resolvedEquipment.items,
+              equipDefaults: true,
             });
-          } catch (giveErr) {
-            // Item might not exist in database - log but don't fail
-            console.warn(`[CharacterCreationModal] Could not give item ${itemId}:`, giveErr);
+          } catch (provisionErr) {
+            console.warn('[CharacterCreationModal] Starting equipment provisioning failed:', provisionErr);
           }
-        }
-        
-        // Give starting gold if the character has a currency tracker
-        if (startingGear.gold > 0) {
-          console.log('[CharacterCreationModal] Starting gold:', startingGear.gold);
-          // TODO: Add gold via update_character or currency tool when available
         }
         
         // Sync state to refresh character list
@@ -410,6 +469,12 @@ Return only valid JSON with this shape:
         setRace('Human');
         setCharClass('Fighter');
         setLevel(1);
+        setBackgroundName('Folk Hero');
+        setCustomBackground('');
+        setPortraitIcon(PORTRAIT_ICONS[0]);
+        setPortraitColor(PORTRAIT_COLORS[0]);
+        setSelectedClassItems(CLASS_EQUIPMENT_OPTIONS.Fighter);
+        setSelectedBackgroundItems(getBackgroundByName('Folk Hero')?.suggestedItems || []);
         setStats({ ...DEFAULT_STATS });
         setBackstory('');
         setPersonality('');
@@ -424,7 +489,7 @@ Return only valid JSON with this shape:
     } finally {
       setLoading(false);
     }
-  }, [name, race, customRace, charClass, customClass, level, stats, characterType, backstory, personality, syncState, onCreated, onClose]);
+  }, [name, race, customRace, charClass, customClass, level, stats, characterType, backgroundName, customBackground, portraitIcon, portraitColor, backstory, personality, resolvedEquipment, syncState, onCreated, onClose]);
 
   if (!isOpen) return null;
 
@@ -511,7 +576,7 @@ Return only valid JSON with this shape:
                   <label className="block text-xs font-bold text-terminal-green/70 mb-2 uppercase">Class</label>
                   <select
                     value={charClass}
-                    onChange={(e) => setCharClass(e.target.value)}
+                    onChange={(e) => handleClassChange(e.target.value)}
                     className="w-full bg-terminal-black border border-terminal-green/50 text-terminal-green px-3 py-2 rounded-lg focus:outline-none focus:border-terminal-green"
                   >
                     {CLASSES.map(c => <option key={c} value={c}>{c}</option>)}
@@ -526,6 +591,32 @@ Return only valid JSON with this shape:
                     />
                   )}
                 </div>
+              </div>
+
+              {/* Background */}
+              <div>
+                <label className="block text-xs font-bold text-terminal-green/70 mb-2 uppercase">Background</label>
+                <select
+                  value={backgroundName}
+                  onChange={(e) => handleBackgroundChange(e.target.value)}
+                  className="w-full bg-terminal-black border border-terminal-green/50 text-terminal-green px-3 py-2 rounded-lg focus:outline-none focus:border-terminal-green"
+                >
+                  {BACKGROUND_OPTIONS.map(background => (
+                    <option key={background.name} value={background.name}>{background.name}</option>
+                  ))}
+                </select>
+                <p className="text-xs text-terminal-green/50 mt-1">
+                  {getBackgroundByName(backgroundName)?.description}
+                </p>
+                {backgroundName === 'Custom' && (
+                  <input
+                    type="text"
+                    value={customBackground}
+                    onChange={(e) => setCustomBackground(e.target.value)}
+                    placeholder="Enter background..."
+                    className="w-full mt-2 bg-terminal-black border border-terminal-green/50 text-terminal-green px-3 py-2 rounded-lg focus:outline-none focus:border-terminal-green"
+                  />
+                )}
               </div>
 
               {/* Level & Type */}
@@ -553,6 +644,46 @@ Return only valid JSON with this shape:
                     <option value="neutral">Neutral</option>
                     <option value="enemy">Enemy</option>
                   </select>
+                </div>
+              </div>
+
+              {/* Portrait */}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-terminal-green/70 mb-2 uppercase">Icon</label>
+                  <div className="grid grid-cols-6 gap-2">
+                    {PORTRAIT_ICONS.map(icon => (
+                      <button
+                        key={icon}
+                        type="button"
+                        onClick={() => setPortraitIcon(icon)}
+                        className={`h-9 border rounded text-lg transition-colors ${
+                          portraitIcon === icon
+                            ? 'border-terminal-green bg-terminal-green/20'
+                            : 'border-terminal-green/30 hover:bg-terminal-green/10'
+                        }`}
+                      >
+                        {icon}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-terminal-green/70 mb-2 uppercase">Color</label>
+                  <div className="grid grid-cols-4 gap-2">
+                    {PORTRAIT_COLORS.map(color => (
+                      <button
+                        key={color.name}
+                        type="button"
+                        title={color.name}
+                        onClick={() => setPortraitColor(color)}
+                        className={`h-9 rounded border-2 transition-colors ${
+                          portraitColor.name === color.name ? 'border-terminal-green' : 'border-terminal-green/20'
+                        }`}
+                        style={{ backgroundColor: color.bg }}
+                      />
+                    ))}
+                  </div>
                 </div>
               </div>
             </div>
@@ -807,6 +938,54 @@ Return only valid JSON with this shape:
                 />
               </div>
 
+              {/* Starting Equipment */}
+              <div className="border border-terminal-green/30 rounded-lg p-4 bg-terminal-green/5">
+                <h3 className="text-sm font-bold text-terminal-green uppercase mb-3">Starting Equipment</h3>
+                <div className="space-y-3">
+                  <div>
+                    <div className="text-xs text-terminal-green/60 uppercase mb-2">Class Gear</div>
+                    <div className="flex flex-wrap gap-2">
+                      {(CLASS_EQUIPMENT_OPTIONS[actualClass] || ['Dagger', 'Explorer Pack']).map(item => (
+                        <button
+                          key={item}
+                          type="button"
+                          onClick={() => toggleClassItem(item)}
+                          className={`px-2 py-1 text-xs border rounded ${
+                            selectedClassItems.includes(item)
+                              ? 'border-terminal-green bg-terminal-green/20 text-terminal-green'
+                              : 'border-terminal-green/30 text-terminal-green/60'
+                          }`}
+                        >
+                          {item}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-terminal-green/60 uppercase mb-2">Background Gear</div>
+                    <div className="flex flex-wrap gap-2">
+                      {(getBackgroundByName(actualBackground || backgroundName)?.suggestedItems || []).map(item => (
+                        <button
+                          key={item}
+                          type="button"
+                          onClick={() => toggleBackgroundItem(item)}
+                          className={`px-2 py-1 text-xs border rounded ${
+                            selectedBackgroundItems.includes(item)
+                              ? 'border-terminal-green bg-terminal-green/20 text-terminal-green'
+                              : 'border-terminal-green/30 text-terminal-green/60'
+                          }`}
+                        >
+                          {item}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="text-xs text-terminal-green/70">
+                    Will add: {resolvedEquipment.items.join(', ') || 'No gear'} • Starting gold: {resolvedEquipment.gold} gp
+                  </div>
+                </div>
+              </div>
+
               {/* Preview */}
               <div className="border border-terminal-green/30 rounded-lg p-4 bg-black/50">
                 <h3 className="text-sm font-bold text-terminal-green/70 uppercase mb-3">Preview</h3>
@@ -826,6 +1005,10 @@ Return only valid JSON with this shape:
                   <div>
                     <span className="text-terminal-green/60">Class:</span>{' '}
                     <span className="text-terminal-green">{charClass === 'Other' ? customClass : charClass}</span>
+                  </div>
+                  <div className="col-span-2">
+                    <span className="text-terminal-green/60">Background:</span>{' '}
+                    <span className="text-terminal-green">{actualBackground || '—'}</span>
                   </div>
                   <div className="col-span-2">
                     <span className="text-terminal-green/60">Stats:</span>{' '}

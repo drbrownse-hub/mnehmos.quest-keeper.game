@@ -77,6 +77,11 @@ export interface CharacterSummary {
   level: number;
   class: string;
   race?: string;
+  background?: string;
+  backstory?: string;
+  personality?: string;
+  portraitIcon?: string;
+  portraitColor?: { name: string; bg: string; border: string };
   hp: number;
   maxHp: number;
   ac?: number;
@@ -242,6 +247,7 @@ function parseParty(data: any): Party | null {
 
 function parseCharacterSummary(data: any): CharacterSummary | null {
   if (!data || !data.id) return null;
+  const appDetails = parseCharacterBehaviorDetails(data.behavior);
 
   // content may be deeply nested depending on API return
   
@@ -267,6 +273,11 @@ function parseCharacterSummary(data: any): CharacterSummary | null {
     level: data.level || 1,
     class: data.class || data.characterClass || 'Adventurer',
     race: data.race,
+    background: data.background,
+    backstory: data.backstory || appDetails.backstory,
+    personality: data.personality || appDetails.personality,
+    portraitIcon: data.portraitIcon || appDetails.portraitIcon,
+    portraitColor: data.portraitColor || appDetails.portraitColor,
     hp: data.hp || 0,
     maxHp: data.maxHp || data.max_hp || data.hp || 1,
     ac: data.ac || data.armorClass,
@@ -282,6 +293,24 @@ function parseCharacterSummary(data: any): CharacterSummary | null {
     spellSaveDC: data.spellSaveDC,
     spellAttackBonus: data.spellAttackBonus,
   };
+}
+
+function parseCharacterBehaviorDetails(behavior: unknown): Partial<CharacterSummary> {
+  if (typeof behavior !== 'string') return {};
+  const match = behavior.match(/<!--\s*QUEST_KEEPER_CHARACTER_DETAILS\n([\s\S]*?)\nQUEST_KEEPER_CHARACTER_DETAILS\s*-->/);
+  if (!match?.[1]) return {};
+
+  try {
+    const parsed = JSON.parse(match[1]);
+    return {
+      backstory: typeof parsed.backstory === 'string' ? parsed.backstory : undefined,
+      personality: typeof parsed.personality === 'string' ? parsed.personality : undefined,
+      portraitIcon: typeof parsed.portraitIcon === 'string' ? parsed.portraitIcon : undefined,
+      portraitColor: parsed.portraitColor && typeof parsed.portraitColor === 'object' ? parsed.portraitColor : undefined,
+    };
+  } catch {
+    return {};
+  }
 }
 
 function parsePartyMember(data: any): PartyMember | null {

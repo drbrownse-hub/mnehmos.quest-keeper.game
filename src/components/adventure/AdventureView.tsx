@@ -3,7 +3,7 @@ import { ChatHistory } from '../terminal/ChatHistory';
 import { ChatInput } from '../terminal/ChatInput';
 import { useGameStateStore } from '../../stores/gameStateStore';
 import { usePartyStore } from '../../stores/partyStore';
-import { CharacterCreationModal } from './CharacterCreationModal';
+import { CharacterCreationModal } from '../party/CharacterCreationModal';
 import { PartySelector, PartyPanel, PartyCreatorModal, CharacterPickerModal } from '../party';
 
 const QuickStats = () => {
